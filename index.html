@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TimeNote</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #232323;
+    --panel-2: #2a2a2a;
+    --border: #333;
+    --text: #e8e8e8;
+    --muted: #888;
+    --accent: #4a9eff;
+    --accent-hover: #6bb3ff;
+    --danger: #e35d5d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+  }
+  #sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #sidebar header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #sidebar header h1 {
+    font-size: 15px;
+    margin: 0;
+    letter-spacing: 0.5px;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.ghost {
+    background: transparent;
+    color: var(--muted);
+    padding: 4px 8px;
+  }
+  button.ghost:hover { color: var(--text); background: var(--panel-2); }
+  button.danger { background: transparent; color: var(--danger); }
+  button.danger:hover { background: rgba(227, 93, 93, 0.15); }
+  #note-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .note-item {
+    padding: 10px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .note-item:hover { background: var(--panel-2); }
+  .note-item.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 9px; }
+  .note-item .title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note-item .meta { font-size: 11px; color: var(--muted); }
+  .note-item .delete {
+    opacity: 0;
+    color: var(--muted);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 16px;
+  }
+  .note-item:hover .delete { opacity: 1; }
+  .note-item .delete:hover { color: var(--danger); }
+
+  #main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #main-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  #title-input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+    padding: 4px 0;
+    outline: none;
+  }
+  #title-input:focus { border-bottom: 1px solid var(--border); }
+
+  #entries {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .entry {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid transparent;
+  }
+  .entry:hover { border-bottom-color: var(--border); }
+  .entry .ts {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    flex-shrink: 0;
+    padding-top: 2px;
+    min-width: 70px;
+  }
+  .entry .text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+  .empty {
+    color: var(--muted);
+    text-align: center;
+    padding: 40px 20px;
+    font-style: italic;
+  }
+
+  #composer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  #entry-input {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font: inherit;
+    resize: none;
+    outline: none;
+    min-height: 42px;
+    max-height: 200px;
+  }
+  #entry-input:focus { border-color: var(--accent); }
+  #composer-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  #ts-indicator { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #ts-indicator.live { color: var(--accent); }
+</style>
+</head>
+<body>
+  <aside id="sidebar">
+    <header>
+      <h1>TimeNote</h1>
+      <button id="new-note">+ New</button>
+    </header>
+    <div id="note-list"></div>
+  </aside>
+
+  <main id="main">
+    <div id="main-header">
+      <input id="title-input" placeholder="Untitled note" />
+      <button id="export-btn" class="ghost">Export .md</button>
+      <button id="delete-btn" class="danger">Delete</button>
+    </div>
+    <div id="entries"></div>
+    <div id="composer">
+      <textarea id="entry-input" rows="1" placeholder="Type a note. Press Enter to save (Shift+Enter for newline)."></textarea>
+      <div id="composer-hint">
+        <span>Timestamp captures the moment you started typing.</span>
+        <span id="ts-indicator">—</span>
+      </div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  const STORAGE_KEY = "timenote.v1";
+  const $ = (id) => document.getElementById(id);
+
+  /** @type {{notes: Note[], activeId: string | null}} */
+  let state = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { notes: [], activeId: null };
+  }
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function activeNote() {
+    return state.notes.find(n => n.id === state.activeId) || null;
+  }
+
+  function createNote() {
+    const note = {
+      id: uid(),
+      title: "",
+      createdAt: Date.now(),
+      entries: [],
+    };
+    state.notes.unshift(note);
+    state.activeId = note.id;
+    save();
+    render();
+    $("title-input").focus();
+  }
+
+  function deleteNote(id) {
+    const note = state.notes.find(n => n.id === id);
+    if (!note) return;
+    const label = note.title || "this note";
+    if (!confirm(`Delete "${label}"? This cannot be undone.`)) return;
+    state.notes = state.notes.filter(n => n.id !== id);
+    if (state.activeId === id) state.activeId = state.notes[0]?.id || null;
+    save();
+    render();
+  }
+
+  function selectNote(id) {
+    state.activeId = id;
+    save();
+    render();
+  }
+
+  function formatTime(ts) {
+    const d = new Date(ts);
+    return d.toTimeString().slice(0, 8);
+  }
+
+  function formatDate(ts) {
+    const d = new Date(ts);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function renderSidebar() {
+    const list = $("note-list");
+    list.innerHTML = "";
+    if (state.notes.length === 0) {
+      list.innerHTML = '<div class="empty">No notes yet</div>';
+      return;
+    }
+    for (const note of state.notes) {
+      const div = document.createElement("div");
+      div.className = "note-item" + (note.id === state.activeId ? " active" : "");
+      const title = note.title || "Untitled";
+      const meta = `${formatDate(note.createdAt)} · ${note.entries.length} entr${note.entries.length === 1 ? "y" : "ies"}`;
+      div.innerHTML = `
+        <div>
+          <div class="title"></div>
+          <div class="meta"></div>
+        </div>
+        <button class="delete" title="Delete">×</button>
+      `;
+      div.querySelector(".title").textContent = title;
+      div.querySelector(".meta").textContent = meta;
+      div.addEventListener("click", (e) => {
+        if (e.target.classList.contains("delete")) return;
+        selectNote(note.id);
+      });
+      div.querySelector(".delete").addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteNote(note.id);
+      });
+      list.appendChild(div);
+    }
+  }
+
+  function renderMain() {
+    const note = activeNote();
+    const titleInput = $("title-input");
+    const entriesEl = $("entries");
+    const composer = $("composer");
+    const exportBtn = $("export-btn");
+    const deleteBtn = $("delete-btn");
+
+    if (!note) {
+      titleInput.value = "";
+      titleInput.disabled = true;
+      entriesEl.innerHTML = '<div class="empty">Create a new note to get started.</div>';
+      composer.style.display = "none";
+      exportBtn.style.display = "none";
+      deleteBtn.style.display = "none";
+      return;
+    }
+
+    titleInput.disabled = false;
+    titleInput.value = note.title;
+    composer.style.display = "";
+    exportBtn.style.display = "";
+    deleteBtn.style.display = "";
+
+    if (note.entries.length === 0) {
+      entriesEl.innerHTML = '<div class="empty">Start typing below. Each entry is timestamped when you begin typing.</div>';
+    } else {
+      entriesEl.innerHTML = "";
+      for (const entry of note.entries) {
+        const div = document.createElement("div");
+        div.className = "entry";
+        const ts = document.createElement("div");
+        ts.className = "ts";
+        ts.textContent = formatTime(entry.startedAt);
+        const text = document.createElement("div");
+        text.className = "text";
+        text.textContent = entry.text;
+        div.appendChild(ts);
+        div.appendChild(text);
+        entriesEl.appendChild(div);
+      }
+      entriesEl.scrollTop = entriesEl.scrollHeight;
+    }
+  }
+
+  function render() {
+    renderSidebar();
+    renderMain();
+  }
+
+  // --- Composer / typing-start timestamp logic ---
+  let typingStart = null;
+
+  function updateTsIndicator() {
+    const el = $("ts-indicator");
+    if (typingStart) {
+      el.textContent = `started ${formatTime(typingStart)}`;
+      el.classList.add("live");
+    } else {
+      el.textContent = "—";
+      el.classList.remove("live");
+    }
+  }
+
+  function commitEntry() {
+    const input = $("entry-input");
+    const text = input.value.replace(/\s+$/, "");
+    if (!text || !typingStart) {
+      input.value = "";
+      typingStart = null;
+      autosize();
+      updateTsIndicator();
+      return;
+    }
+    const note = activeNote();
+    if (!note) return;
+    note.entries.push({
+      startedAt: typingStart,
+      endedAt: Date.now(),
+      text,
+    });
+    save();
+    input.value = "";
+    typingStart = null;
+    autosize();
+    updateTsIndicator();
+    render();
+    input.focus();
+  }
+
+  function autosize() {
+    const el = $("entry-input");
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }
+
+  // --- Export to Markdown ---
+  function exportMarkdown() {
+    const note = activeNote();
+    if (!note) return;
+    const title = note.title || "Untitled";
+    const date = formatDate(note.createdAt);
+    const lines = [];
+    lines.push(`# ${title}`);
+    lines.push("");
+    lines.push(`*Date: ${date}*`);
+    lines.push("");
+    lines.push("## Notes");
+    lines.push("");
+    if (note.entries.length === 0) {
+      lines.push("_No entries._");
+    } else {
+      for (const entry of note.entries) {
+        const ts = formatTime(entry.startedAt);
+        const text = entry.text.split("\n").join("\n  ");
+        lines.push(`- **[${ts}]** ${text}`);
+      }
+    }
+    lines.push("");
+    const md = lines.join("\n");
+
+    const filenameSafe = (title || "note")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "note";
+    const filename = `${date}-${filenameSafe}.md`;
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // --- Wire up events ---
+  $("new-note").addEventListener("click", createNote);
+  $("export-btn").addEventListener("click", exportMarkdown);
+  $("delete-btn").addEventListener("click", () => {
+    if (state.activeId) deleteNote(state.activeId);
+  });
+
+  $("title-input").addEventListener("input", (e) => {
+    const note = activeNote();
+    if (!note) return;
+    note.title = e.target.value;
+    save();
+    renderSidebar();
+  });
+
+  const entryInput = $("entry-input");
+  entryInput.addEventListener("input", () => {
+    if (entryInput.value.length > 0 && !typingStart) {
+      typingStart = Date.now();
+      updateTsIndicator();
+    } else if (entryInput.value.length === 0 && typingStart) {
+      typingStart = null;
+      updateTsIndicator();
+    }
+    autosize();
+  });
+  entryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      commitEntry();
+    }
+  });
+
+  // Seed an initial note if storage is empty
+  if (state.notes.length === 0) {
+    createNote();
+  } else {
+    if (!state.activeId || !activeNote()) state.activeId = state.notes[0].id;
+    render();
+  }
+})();
+</script>
+</body>
+</html>
