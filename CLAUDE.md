@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project shape
 
-TimeNote is a single-file static web app: `index.html` contains all markup, CSS, and JS. There is no build step, no package manager, no server, no dependencies, and no test suite. To run or test changes, open `index.html` in a browser (or `open index.html` on macOS). To verify changes, reload the page and exercise the UI manually.
+TimeNote is a single-file static web app: `public/index.html` contains all markup, CSS, and JS. There is no build step, no package manager, no server, no dependencies, and no test suite. To run or test changes, open `public/index.html` in a browser (or `open public/index.html` on macOS). To verify changes, reload the page and exercise the UI manually. The app is deployed to Cloudflare Pages from the `public/` directory.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ State lives entirely client-side in `localStorage` under the key `timenote.v1`. 
 { notes: [ { id, title, createdAt, entries: [ { startedAt, endedAt, text } ] } ], activeId, settings: { includePrompt, promptText } }
 ```
 
-The whole script is one IIFE in `<script>` at the bottom of `index.html`. Rendering is imperative: any state change calls `render()`, which rebuilds the sidebar and main pane from scratch — there is no diffing, no reactive framework. When adding features, follow this pattern (mutate `state`, call `save()`, call `render()` or a sub-renderer) rather than introducing reactive abstractions.
+The whole script is one IIFE in `<script>` at the bottom of `public/index.html`. Rendering is imperative: any state change calls `render()`, which rebuilds the sidebar and main pane from scratch — there is no diffing, no reactive framework. When adding features, follow this pattern (mutate `state`, call `save()`, call `render()` or a sub-renderer) rather than introducing reactive abstractions.
 
 `load()` merges `defaultSettings()` into stored state on read, so older `localStorage` blobs without a `settings` key keep working. New persisted fields should follow the same merge-on-load pattern rather than a versioned migration.
 

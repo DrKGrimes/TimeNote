@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" />
+<meta name="referrer" content="no-referrer" />
 <title>TimeNote</title>
 <style>
   :root {
@@ -17,7 +19,7 @@
     --danger: #e35d5d;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100dvh; min-height: 100dvh; margin: 0; }
   body {
     background: var(--bg);
     color: var(--text);
@@ -189,11 +191,18 @@
   #sidebar-footer {
     padding: 10px 12px;
     border-top: 1px solid var(--border);
+    display: flex;
+    gap: 6px;
   }
-  #settings-btn {
-    width: 100%;
-    text-align: left;
+  #sidebar-footer button { flex: 1; text-align: left; }
+
+  #menu-btn { display: none; }
+  #sidebar-backdrop {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+    z-index: 40; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
   }
+  body.sidebar-open #sidebar-backdrop { opacity: 1; pointer-events: auto; }
 
   .modal {
     position: fixed;
@@ -270,6 +279,32 @@
     display: flex;
     justify-content: flex-end;
   }
+  .modal-body h3 {
+    font-size: 13px;
+    margin: 14px 0 6px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .modal-body p, .modal-body ul { margin: 8px 0; }
+  .modal-body ul { padding-left: 20px; }
+  .modal-body li { margin: 4px 0; }
+
+  @media (max-width: 720px) {
+    body { grid-template-columns: 1fr; }
+    #sidebar {
+      position: fixed; top: 0; bottom: 0; left: 0;
+      width: min(85%, 320px); z-index: 50;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+    }
+    body.sidebar-open #sidebar { transform: translateX(0); }
+    #menu-btn { display: inline-flex; }
+    #entry-input { font-size: 16px; }
+    .entry .ts { min-width: 60px; }
+    #composer { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+    #footer { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  }
 </style>
 </head>
 <body>
@@ -280,12 +315,14 @@
     </header>
     <div id="note-list"></div>
     <div id="sidebar-footer">
+      <button id="about-btn" class="ghost">ⓘ About</button>
       <button id="settings-btn" class="ghost">⚙ Settings</button>
     </div>
   </aside>
 
   <main id="main">
     <div id="main-header">
+      <button id="menu-btn" class="ghost" aria-label="Open notes list">☰</button>
       <input id="title-input" placeholder="Untitled note" />
       <button id="export-btn" class="ghost">Export .md</button>
       <button id="delete-btn" class="danger">Delete</button>
@@ -319,6 +356,37 @@
       </div>
     </div>
   </div>
+
+  <div id="about-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-labelledby="about-title" aria-modal="true">
+      <div class="modal-header">
+        <h2 id="about-title">About TimeNote</h2>
+        <button id="about-close" class="ghost close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>TimeNote is a tiny tool for taking timestamped notes during a meeting. Each entry is stamped with the moment you <em>started</em> typing it — not when you hit Enter — so the timestamps line up with what was actually being said when the thought first occurred to you. Pair the exported Markdown with a meeting transcript and an LLM can produce a hybrid summary that emphasises the moments you marked.</p>
+
+        <h3>How to use it</h3>
+        <ul>
+          <li><strong>+ New</strong> creates a note.</li>
+          <li>Type in the box at the bottom — the timestamp captures the moment you start typing.</li>
+          <li><strong>Enter</strong> saves the entry. <strong>Shift+Enter</strong> inserts a newline within the same entry.</li>
+          <li><strong>Export .md</strong> downloads the note as Markdown with YAML frontmatter (title, date, start time) ready to paste into Obsidian or feed to an LLM.</li>
+        </ul>
+
+        <h3>Data privacy</h3>
+        <ul>
+          <li>Your notes are stored <strong>only in your browser's local storage</strong>. Nothing is sent to any server.</li>
+          <li>There is no account, no login, no sync, no telemetry, and no third-party scripts.</li>
+          <li>The page itself is served by Cloudflare Pages, so Cloudflare records standard web access logs (date, IP, user-agent) for each visit — but the contents of your notes never leave your device.</li>
+          <li>Clearing your browser's site data for this domain permanently deletes all your notes — there is no copy elsewhere.</li>
+          <li>The Markdown files you choose to export are saved locally to your device by the browser's normal download mechanism.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="sidebar-backdrop"></div>
 
   <footer id="footer">© Curistica 2026</footer>
 
@@ -389,6 +457,7 @@
     state.activeId = id;
     save();
     render();
+    if (isMobile()) setSidebarOpen(false);
   }
 
   function formatTime(ts) {
@@ -531,22 +600,28 @@
   }
 
   // --- Export to Markdown ---
+  const yamlString = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+
   function exportMarkdown() {
     const note = activeNote();
     if (!note) return;
     const title = note.title || "Untitled";
     const date = formatDate(note.createdAt);
     const lines = [];
+    lines.push("---");
+    lines.push(`title: ${yamlString(title)}`);
+    lines.push(`date: ${date}`);
+    if (note.entries.length > 0) {
+      lines.push(`start_time: ${formatTime(note.entries[0].startedAt)}`);
+    }
+    lines.push("---");
+    lines.push("");
     if (state.settings.includePrompt && state.settings.promptText.trim()) {
       lines.push(state.settings.promptText.trim());
       lines.push("");
       lines.push("---");
       lines.push("");
     }
-    lines.push(`# ${title}`);
-    lines.push("");
-    lines.push(`*Date: ${date}*`);
-    lines.push("");
     lines.push("## Notes");
     lines.push("");
     if (note.entries.length === 0) {
@@ -594,15 +669,32 @@
     modal.setAttribute("aria-hidden", "true");
   }
 
+  function openAbout() {
+    const modal = $("about-modal");
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeAbout() {
+    const modal = $("about-modal");
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
   $("settings-btn").addEventListener("click", openSettings);
   $("settings-close").addEventListener("click", closeSettings);
   $("settings-modal").addEventListener("click", (e) => {
     if (e.target === $("settings-modal")) closeSettings();
   });
+  $("about-btn").addEventListener("click", openAbout);
+  $("about-close").addEventListener("click", closeAbout);
+  $("about-modal").addEventListener("click", (e) => {
+    if (e.target === $("about-modal")) closeAbout();
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !$("settings-modal").classList.contains("hidden")) {
-      closeSettings();
-    }
+    if (e.key !== "Escape") return;
+    if (!$("settings-modal").classList.contains("hidden")) closeSettings();
+    if (!$("about-modal").classList.contains("hidden")) closeAbout();
   });
   $("include-prompt").addEventListener("change", (e) => {
     state.settings.includePrompt = e.target.checked;
@@ -633,11 +725,18 @@
     renderSidebar();
   });
 
+  const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
+  const setSidebarOpen = (open) => document.body.classList.toggle("sidebar-open", open);
+
+  $("menu-btn").addEventListener("click", () => setSidebarOpen(true));
+  $("sidebar-backdrop").addEventListener("click", () => setSidebarOpen(false));
+
   const entryInput = $("entry-input");
   entryInput.addEventListener("input", () => {
     if (entryInput.value.length > 0 && !typingStart) {
       typingStart = Date.now();
       updateTsIndicator();
+      if (isMobile()) setSidebarOpen(false);
     } else if (entryInput.value.length === 0 && typingStart) {
       typingStart = null;
       updateTsIndicator();
