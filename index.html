@@ -175,6 +175,91 @@
   }
   #ts-indicator { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   #ts-indicator.live { color: var(--accent); }
+
+  #sidebar-footer {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+  #settings-btn {
+    width: 100%;
+    text-align: left;
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal.hidden { display: none; }
+  .modal-content {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: min(640px, 92vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-header h2 {
+    font-size: 15px;
+    margin: 0;
+    letter-spacing: 0.5px;
+  }
+  .modal-header .close {
+    font-size: 22px;
+    line-height: 1;
+    padding: 0 8px;
+  }
+  .modal-body {
+    padding: 16px 18px 18px;
+    overflow-y: auto;
+  }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-row input { accent-color: var(--accent); }
+  .setting-help {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 8px 0 12px;
+  }
+  #prompt-text {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    resize: vertical;
+    outline: none;
+    min-height: 200px;
+  }
+  #prompt-text:focus { border-color: var(--accent); }
+  #prompt-text:disabled { opacity: 0.5; cursor: not-allowed; }
+  .setting-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+  }
 </style>
 </head>
 <body>
@@ -184,6 +269,9 @@
       <button id="new-note">+ New</button>
     </header>
     <div id="note-list"></div>
+    <div id="sidebar-footer">
+      <button id="settings-btn" class="ghost">⚙ Settings</button>
+    </div>
   </aside>
 
   <main id="main">
@@ -202,20 +290,50 @@
     </div>
   </main>
 
+  <div id="settings-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-labelledby="settings-title" aria-modal="true">
+      <div class="modal-header">
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" class="ghost close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="checkbox-row">
+          <input type="checkbox" id="include-prompt" />
+          <span>Prepend prompt instructions to exported Markdown</span>
+        </label>
+        <p class="setting-help">When enabled, the text below is added to the top of every exported note. Use it to tell an LLM how to combine these notes with a meeting transcript.</p>
+        <textarea id="prompt-text" rows="10" spellcheck="false"></textarea>
+        <div class="setting-actions">
+          <button id="reset-prompt" class="ghost">Reset to default</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 (() => {
   const STORAGE_KEY = "timenote.v1";
   const $ = (id) => document.getElementById(id);
 
-  /** @type {{notes: Note[], activeId: string | null}} */
+  const DEFAULT_PROMPT = "**Instructions to the model reading this file:** These are live, timestamped notes taken by a participant during a meeting. They are intended to be read alongside a separate timestamped transcript of the same meeting (also in Markdown). Give the entries below special emphasis: each one represents a moment the notetaker chose to capture, either marking a point they considered important, or recording context, intent, or interpretation that may be implied but not explicitly stated in the transcript. When summarising, analysing, or producing minutes, anchor your output around these notes — use the transcript for surrounding detail and verbatim quotes, but treat these notes as the guide to what mattered. Where a note is not directly supported by the transcript, treat it as the notetaker's own observation or unstated context, not as a transcription error.";
+
+  function defaultSettings() {
+    return { includePrompt: false, promptText: DEFAULT_PROMPT };
+  }
+
+  /** @type {{notes: Note[], activeId: string | null, settings: {includePrompt: boolean, promptText: string}}} */
   let state = load();
 
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        parsed.settings = { ...defaultSettings(), ...(parsed.settings || {}) };
+        return parsed;
+      }
     } catch (e) {}
-    return { notes: [], activeId: null };
+    return { notes: [], activeId: null, settings: defaultSettings() };
   }
 
   function save() {
@@ -407,6 +525,12 @@
     const title = note.title || "Untitled";
     const date = formatDate(note.createdAt);
     const lines = [];
+    if (state.settings.includePrompt && state.settings.promptText.trim()) {
+      lines.push(state.settings.promptText.trim());
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
     lines.push(`# ${title}`);
     lines.push("");
     lines.push(`*Date: ${date}*`);
@@ -442,6 +566,45 @@
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  // --- Settings modal ---
+  function openSettings() {
+    const modal = $("settings-modal");
+    $("include-prompt").checked = !!state.settings.includePrompt;
+    $("prompt-text").value = state.settings.promptText;
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeSettings() {
+    const modal = $("settings-modal");
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  $("settings-btn").addEventListener("click", openSettings);
+  $("settings-close").addEventListener("click", closeSettings);
+  $("settings-modal").addEventListener("click", (e) => {
+    if (e.target === $("settings-modal")) closeSettings();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("settings-modal").classList.contains("hidden")) {
+      closeSettings();
+    }
+  });
+  $("include-prompt").addEventListener("change", (e) => {
+    state.settings.includePrompt = e.target.checked;
+    save();
+  });
+  $("prompt-text").addEventListener("input", (e) => {
+    state.settings.promptText = e.target.value;
+    save();
+  });
+  $("reset-prompt").addEventListener("click", () => {
+    state.settings.promptText = DEFAULT_PROMPT;
+    $("prompt-text").value = DEFAULT_PROMPT;
+    save();
+  });
 
   // --- Wire up events ---
   $("new-note").addEventListener("click", createNote);
